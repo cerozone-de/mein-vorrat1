@@ -28,6 +28,20 @@
   --r: 14px;
   --nav: 66px;
 }
+[data-dark="1"] {
+  --bg: #111816;
+  --surface: #1c2420;
+  --green: #52b788;
+  --green-mid: #74c69d;
+  --green-light: #95d5b2;
+  --amber: #f4a845;
+  --amber-light: #f8c07a;
+  --red: #e07070;
+  --text: #e8f0ec;
+  --muted: #8aaa96;
+  --border: #2d3d35;
+  --shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text)}
 #app{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
@@ -193,7 +207,8 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
   </div>
   <div class="hdr-actions">
     <div class="sync-dot" id="syncDot" title="Sync-Status"></div>
-    <button class="hdr-btn" id="hdrBtn">⚙️</button>
+    <button class="hdr-btn" id="darkBtn" onclick="toggleDark()" title="Dunkelmodus">🌙</button>
+  <button class="hdr-btn" id="hdrBtn">⚙️</button>
   </div>
 </div>
 
@@ -343,6 +358,16 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
     <div id="notifArea" style="margin-top:11px"></div>
   </div>
 
+  <!-- Kategorien -->
+  <div class="card">
+    <div class="sec-title">🏷️ Kategorien</div>
+    <div id="catsList"></div>
+    <div style="display:flex;gap:7px;margin-top:11px">
+      <input type="text" class="inp" id="catInp" placeholder="Kategorie hinzufügen…" style="margin:0;flex:1">
+      <button class="btn btn-p" style="flex-shrink:0;padding:11px 16px" id="addCatBtn">+</button>
+    </div>
+  </div>
+
   <!-- Läden -->
   <div class="card">
     <div class="sec-title">🏪 Meine Läden</div>
@@ -381,6 +406,8 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
     <div class="sec-title">➕ Produkt hinzufügen</div>
     <label class="flabel">Name</label>
     <input type="text" class="inp" id="aName" placeholder="z.B. Milch, Eier, Brot…">
+    <label class="flabel">Kategorie</label>
+    <select class="inp" id="aCat"></select>
     <label class="flabel">Laden</label>
     <select class="inp" id="aStore"></select>
     <label class="flabel">Menge</label>
@@ -401,6 +428,36 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
   </div>
 </div>
 
+
+<!-- EDIT ITEM MODAL -->
+<div class="moverlay" id="editModal">
+  <div class="msheet">
+    <div class="mhandle"></div>
+    <div class="sec-title">✏️ Produkt bearbeiten</div>
+    <label class="flabel">Name</label>
+    <input type="text" class="inp" id="eName" placeholder="z.B. Milch, Eier, Brot…">
+    <label class="flabel">Kategorie</label>
+    <select class="inp" id="eCat"></select>
+    <label class="flabel">Laden</label>
+    <select class="inp" id="eStore"></select>
+    <label class="flabel">Menge</label>
+    <div style="display:flex;gap:7px;margin-bottom:11px">
+      <input type="number" class="inp" id="eQty" style="flex:1;margin:0" value="1" min="1">
+      <input type="text" class="inp" id="eUnit" placeholder="Stück" style="flex:1;margin:0">
+    </div>
+    <label class="flabel">Status</label>
+    <div style="display:flex;gap:7px;margin-bottom:15px">
+      <button class="btn btn-s" id="seOk" style="flex:1">✅ Vorhanden</button>
+      <button class="btn btn-s" id="seLow" style="flex:1">⚠️ Wenig</button>
+      <button class="btn btn-s" id="seEmpty" style="flex:1">🔴 Leer</button>
+    </div>
+    <div style="display:flex;gap:7px">
+      <button class="btn btn-g" style="flex:1" onclick="closeEditModal()">Abbrechen</button>
+      <button class="btn btn-p" style="flex:1" id="saveEditBtn">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
@@ -413,7 +470,7 @@ const SK = 'mv_state_v2', CK = 'mv_cfg_v2';
 const STORE_COLORS = ['#1a3d2b','#2d6a4f','#52b788','#b8731a','#7c3aed','#b83232','#2563eb','#d97706'];
 const DEFAULT_STORES = ['Billa','Lidl','Hofer','Spar','Rewe'];
 
-let state = { items: [], stores: [...DEFAULT_STORES], lastUpdated: null };
+let state = { items: [], stores: [...DEFAULT_STORES], categories: ['Obst & Gemüse','Milchprodukte','Fleisch & Fisch','Backwaren','Tiefkühl','Getränke','Haushalt','Sonstiges'], lastUpdated: null };
 let cfg = { mode: null, scriptUrl: '', remDays: [3, 6], remTime: '09:00', notifOn: false, lastRemDate: '' };
 let filterStore = 'all', newStatus = 'available', ocrItems = [], shopFilter = 'both';
 let camStream = null, pushDebounce = null, syncing = false, autoSyncInterval = null;
@@ -508,6 +565,7 @@ async function pushSheets() {
 // INIT
 // ──────────────────────────────────────────────────
 async function init() {
+  initDark();
   loadCfg(); loadState();
   try { injectManifest(); } catch(e) { console.warn("manifest:", e); }
   try { setupEvents(); } catch(e) { console.warn("setupEvents error:", e); }
@@ -543,7 +601,7 @@ function showApp() {
 // ──────────────────────────────────────────────────
 // RENDER
 // ──────────────────────────────────────────────────
-function renderAll() { renderStats(); renderChips(); renderPantry(); renderShop(); renderStores(); renderConnInfo(); }
+function renderAll() { renderStats(); renderChips(); renderPantry(); renderShop(); renderStores(); renderCategories(); renderConnInfo(); }
 
 function renderStats() {
   const c = { available: 0, low: 0, empty: 0 };
@@ -571,7 +629,14 @@ function renderChips() {
   state.stores.forEach(s => {
     const c = document.createElement('div');
     c.className = 'chip' + (filterStore === s ? ' active' : '');
-    c.dataset.s = s; c.textContent = s;
+    c.dataset.s = s; c.textContent = '🏪 ' + s;
+    box.appendChild(c);
+  });
+  const usedCats = [...new Set(state.items.map(i => i.category).filter(Boolean))];
+  usedCats.forEach(cat => {
+    const c = document.createElement('div');
+    c.className = 'chip' + (filterStore === 'cat:' + cat ? ' active' : '');
+    c.dataset.s = 'cat:' + cat; c.textContent = '🏷️ ' + cat;
     box.appendChild(c);
   });
   box.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => { filterStore = c.dataset.s; renderChips(); renderPantry(); }));
@@ -621,7 +686,7 @@ function emoji(n) {
 
 function renderPantry() {
   const box = document.getElementById('pantryList');
-  let items = filterStore === 'all' ? [...state.items] : state.items.filter(i => i.store === filterStore);
+  let items = filterStore === 'all' ? [...state.items] : filterStore.startsWith('cat:') ? state.items.filter(i => i.category === filterStore.slice(4)) : state.items.filter(i => i.store === filterStore);
   if (!items.length) {
     box.innerHTML = `<div class="empty"><div class="empty-i">🧺</div><p>${filterStore === 'all' ? 'Noch keine Produkte.<br>Scanne deinen ersten Kassenbon!' : 'Keine Produkte für <strong>' + filterStore + '</strong>.'}</p></div>`;
     return;
@@ -637,7 +702,7 @@ function renderPantry() {
       <div class="iinfo">
         <div class="iname">${esc(item.name)}</div>
         <div class="imeta">
-          ${item.store ? `<span>${esc(item.store)}</span><span>·</span>` : ''}
+          ${item.category ? `<span style='font-size:10px;background:var(--bg);color:var(--muted);padding:1px 6px;border-radius:10px;font-weight:700'>${esc(item.category)}</span>` : ''}${item.store ? `<span>${esc(item.store)}</span><span>·</span>` : ''}
           <span>${item.quantity || 1} ${esc(item.unit || 'Stück')}</span>
           <span class="sbadge ${item.status === 'available' ? 's-ok' : item.status === 'low' ? 's-low' : 's-empty'}">${slabel(item.status)}</span>
         </div>
@@ -646,11 +711,13 @@ function renderPantry() {
         <button class="sbtn sok" data-id="${item.id}" data-st="available" title="Vorhanden">✅</button>
         <button class="sbtn slow" data-id="${item.id}" data-st="low" title="Wenig">⚠️</button>
         <button class="sbtn sgone" data-id="${item.id}" data-st="empty" title="Leer">🔴</button>
+        <button class="sbtn sedit" data-id="${item.id}" title="Bearbeiten" style="background:#e8f4f0;font-size:14px">✏️</button>
         <button class="sbtn sdel" data-id="${item.id}" title="Löschen" style="background:#f8d7da;font-size:14px">🗑️</button>
       </div>`;
     d.querySelectorAll('.sbtn').forEach(b => b.addEventListener('click', e => {
       e.stopPropagation();
       if (b.classList.contains('sdel')) delConfirm(b.dataset.id, item.name);
+      else if (b.classList.contains('sedit')) openEditModal(item);
       else setStatus(b.dataset.id, b.dataset.st);
     }));
     box.appendChild(d);
@@ -696,6 +763,23 @@ function renderStores() {
   updSelects();
 }
 
+
+function renderCategories() {
+  const box = document.getElementById('catsList'); if (!box) return;
+  box.innerHTML = '';
+  (state.categories || []).forEach((cat, i) => {
+    const r = document.createElement('div'); r.className = 'strow';
+    r.innerHTML = `<span style="font-size:16px">🏷️</span>
+      <span style="flex:1;font-weight:600">${esc(cat)}</span>
+      <button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:17px;padding:4px" data-c="${esc(cat)}">✕</button>`;
+    r.querySelector('button').addEventListener('click', () => {
+      state.categories = state.categories.filter(x => x !== cat);
+      savState(); schedulePush(); renderCategories(); updSelects(); renderChips();
+    });
+    box.appendChild(r);
+  });
+}
+
 function renderConnInfo() {
   const box = document.getElementById('connInfo');
   if (!box) return;
@@ -713,11 +797,17 @@ function renderRemDays() {
 }
 
 function updSelects() {
-  ['aStore', 'ocrStore'].forEach(id => {
+  ['aStore', 'ocrStore', 'eStore'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     const cur = el.value;
     el.innerHTML = state.stores.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
     if (state.stores.includes(cur)) el.value = cur;
+  });
+  ['aCat', 'eCat'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    const cur = el.value;
+    el.innerHTML = '<option value="">— keine —</option>' + state.categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    if (state.categories.includes(cur)) el.value = cur;
   });
 }
 
@@ -726,10 +816,10 @@ function updSelects() {
 // ──────────────────────────────────────────────────
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
-function addItem(name, store, qty, unit, status) {
+function addItem(name, store, qty, unit, status, category) {
   const dup = state.items.find(i => i.name.toLowerCase() === name.toLowerCase() && i.store === store);
   if (dup) { dup.status = status; dup.quantity = qty; }
-  else { state.items.push({ id: uid(), name: name.trim(), store, quantity: qty || 1, unit: unit || 'Stück', status: status || 'available', addedAt: new Date().toISOString(), _chk: false }); }
+  else { state.items.push({ id: uid(), name: name.trim(), store, quantity: qty || 1, unit: unit || 'Stück', status: status || 'available', category: category || '', addedAt: new Date().toISOString(), _chk: false }); }
   savState(); schedulePush(); renderAll();
   showToast(dup ? `🔄 "${name}" aktualisiert` : `✅ "${name}" hinzugefügt`);
 }
@@ -747,6 +837,38 @@ function toggleChk(id) {
 
 function rmStore(s) {
   state.stores = state.stores.filter(x => x !== s); savState(); schedulePush(); renderAll();
+}
+
+
+let editingId = null, editStatus = 'available';
+
+function openEditModal(item) {
+  editingId = item.id;
+  editStatus = item.status;
+  document.getElementById('eName').value = item.name;
+  document.getElementById('eQty').value = item.quantity || 1;
+  document.getElementById('eUnit').value = item.unit || 'Stück';
+  updSelects();
+  document.getElementById('eStore').value = item.store || '';
+  document.getElementById('eCat').value = item.category || '';
+  updEditStatusBtns();
+  document.getElementById('editModal').classList.add('open');
+}
+
+function closeEditModal() {
+  document.getElementById('editModal').classList.remove('open');
+  editingId = null;
+}
+
+function updEditStatusBtns() {
+  const bg = { available: '#d8f3dc', low: '#fff3cd', empty: '#f8d7da' };
+  const border = { available: '#52b788', low: '#ffc107', empty: '#dc3545' };
+  ['seOk','seLow','seEmpty'].forEach(id => {
+    const s = {seOk:'available',seLow:'low',seEmpty:'empty'}[id];
+    const b = document.getElementById(id); if (!b) return;
+    b.style.background = editStatus === s ? bg[s] : 'var(--bg)';
+    b.style.border = editStatus === s ? `2px solid ${border[s]}` : '2px solid transparent';
+  });
 }
 
 function delConfirm(id, name) {
@@ -875,7 +997,27 @@ function setOcrText(txt, pct) {
   document.getElementById('ocrFill').style.width = pct + '%';
 }
 
+function detectStore(text) {
+  const lower = text.toLowerCase();
+  const storeMap = [
+    ['aldi', 'Aldi'], ['rewe', 'Rewe'], ['lidl', 'Lidl'], ['penny', 'Penny'],
+    ['billa', 'Billa'], ['spar', 'Spar'], ['hofer', 'Hofer'], ['edeka', 'Edeka'],
+    ['netto', 'Netto'], ['kaufland', 'Kaufland'], ['real', 'Real'],
+    ['dm ', 'dm'], ['rossmann', 'Rossmann'], ['müller', 'Müller'],
+    ['tegut', 'tegut'], ['norma', 'Norma'], ['nahkauf', 'Nahkauf']
+  ];
+  for (const [key, name] of storeMap) {
+    if (lower.includes(key)) return name;
+  }
+  return null;
+}
+
 function parseReceipt(text) {
+  // Laden automatisch erkennen
+  const detectedStore = detectStore(text);
+  if (detectedStore && state.stores.includes(detectedStore)) {
+    document.getElementById('ocrStore').value = detectedStore;
+  }
   // Zeilen die definitiv keine Produkte sind
   const skipPatterns = [
     /^(mwst|ust|mehrwert|summe|total|gesamt|zwischen|bar |bargeld|rückgabe|rückgeld|wechselgeld|bezahlt|zahlung|kasse|bon|beleg|danke|subtotal|datum|öffnung|filiale|kassier|bedien|vielen|wiedersehen|artikel|normalpreis)/i,
@@ -1100,7 +1242,7 @@ function setupEvents() {
   // Nav
   document.querySelectorAll('.ni').forEach(b => b.addEventListener('click', () => {
     const v = b.dataset.v; showView(v); setNav(v);
-    if (v === 'more') { renderRemDays(); renderStores(); updNotifUI(); renderConnInfo(); }
+    if (v === 'more') { renderRemDays(); renderStores(); renderCategories(); updNotifUI(); renderConnInfo(); }
     if (v === 'shopping') renderShop();
     if (v === 'scan') { cancelCam(); document.getElementById('capturedCanvas').style.display = 'none'; document.getElementById('ocrResults').style.display = 'none'; document.getElementById('ocrProg').style.display = 'none'; document.getElementById('scanBtns').style.display = 'flex'; }
   }));
@@ -1112,7 +1254,7 @@ function setupEvents() {
   document.getElementById('saveItemBtn').addEventListener('click', () => {
     const name = document.getElementById('aName').value.trim();
     if (!name) { showToast('❌ Bitte Namen eingeben'); return; }
-    addItem(name, document.getElementById('aStore').value, +document.getElementById('aQty').value || 1, document.getElementById('aUnit').value.trim() || 'Stück', newStatus);
+    addItem(name, document.getElementById('aStore').value, +document.getElementById('aQty').value || 1, document.getElementById('aUnit').value.trim() || 'Stück', newStatus, document.getElementById('aCat').value);
     document.getElementById('aName').value = ''; document.getElementById('aQty').value = '1'; document.getElementById('aUnit').value = '';
     closeModal();
   });
@@ -1159,6 +1301,37 @@ function setupEvents() {
   // offlineBtn handled via onclick
 
   // More – connection actions
+  // Edit modal
+  document.getElementById('editModal').addEventListener('click', e => { if (e.target === document.getElementById('editModal')) closeEditModal(); });
+  ['seOk','seLow','seEmpty'].forEach(id => {
+    const b = document.getElementById(id); if (!b) return;
+    b.addEventListener('click', () => { editStatus = {seOk:'available',seLow:'low',seEmpty:'empty'}[id]; updEditStatusBtns(); });
+  });
+  const saveEdit = document.getElementById('saveEditBtn');
+  if (saveEdit) saveEdit.addEventListener('click', () => {
+    if (!editingId) return;
+    const item = state.items.find(x => x.id === editingId); if (!item) return;
+    item.name = document.getElementById('eName').value.trim() || item.name;
+    item.store = document.getElementById('eStore').value;
+    item.category = document.getElementById('eCat').value;
+    item.quantity = +document.getElementById('eQty').value || 1;
+    item.unit = document.getElementById('eUnit').value.trim() || 'Stück';
+    item.status = editStatus;
+    savState(); schedulePush(); renderAll();
+    closeEditModal(); showToast('✅ Gespeichert');
+  });
+
+  // Categories
+  const addCatBtn = document.getElementById('addCatBtn');
+  if (addCatBtn) addCatBtn.addEventListener('click', () => {
+    const n = document.getElementById('catInp').value.trim();
+    if (!n || state.categories.includes(n)) return;
+    state.categories.push(n); savState(); schedulePush();
+    renderCategories(); updSelects();
+    document.getElementById('catInp').value = '';
+    showToast('🏷️ "' + n + '" hinzugefügt');
+  });
+
   document.getElementById('syncNowBtn').addEventListener('click', async () => { showToast('🔄 Synchronisiere…'); await pullSheets(); renderAll(); showToast('✅ Synchronisiert'); });
   document.getElementById('copyShareBtn').addEventListener('click', () => {
     const url = getShareUrl();
@@ -1183,6 +1356,23 @@ function setupEvents() {
 // ──────────────────────────────────────────────────
 // SETUP ACTIONS – standalone so they work even if setupEvents() crashes
 // ──────────────────────────────────────────────────
+
+function toggleDark() {
+  const isDark = document.documentElement.getAttribute('data-dark') === '1';
+  document.documentElement.setAttribute('data-dark', isDark ? '0' : '1');
+  localStorage.setItem('mv_dark', isDark ? '0' : '1');
+  document.getElementById('darkBtn').textContent = isDark ? '🌙' : '☀️';
+}
+
+function initDark() {
+  const saved = localStorage.getItem('mv_dark');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const dark = saved !== null ? saved === '1' : prefersDark;
+  document.documentElement.setAttribute('data-dark', dark ? '1' : '0');
+  const btn = document.getElementById('darkBtn');
+  if (btn) btn.textContent = dark ? '☀️' : '🌙';
+}
+
 function doConnect() {
   const inp = document.getElementById('scriptUrl');
   if (!inp) return;
