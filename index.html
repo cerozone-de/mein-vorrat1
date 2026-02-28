@@ -75,6 +75,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--font-body);background:va
 .sync-dot.syncing{background:var(--amber-light);animation:pulse 1s infinite}
 .sync-dot.err{background:var(--red)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
 
 /* VIEWS */
 .view{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 14px calc(var(--nav) + 16px);display:none}
@@ -159,15 +160,8 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
 .scanicon{font-size:54px;margin-bottom:10px}
 .scantitle{color:#fff;font-size:18px;font-weight:700;margin-bottom:5px;font-family:var(--font-head)}
 .scansub{color:rgba(255,255,255,.75);font-size:12px;line-height:1.5}
-#cameraPreview{width:100%;border-radius:12px;max-height:260px;object-fit:cover;display:none;margin-bottom:10px}
-#capturedCanvas{width:100%;border-radius:12px;max-height:260px;object-fit:cover;display:none;margin-bottom:10px}
 .progbar{height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin:10px 0}
 .progfill{height:100%;background:var(--green-light);border-radius:3px;transition:width .3s}
-.ocrrow{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid var(--border)}
-.ocrrow:last-child{border-bottom:none}
-.ocrtog{width:22px;height:22px;border-radius:6px;border:2px solid var(--green-mid);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:all .15s;font-size:11px}
-.ocrtog.sel{background:var(--green-mid);color:#fff;border-color:var(--green-mid)}
-.ocrname input{border:none;background:none;font-family:var(--font-body);font-size:13px;font-weight:600;width:100%;outline:none;color:var(--text)}
 
 /* REMINDER DAYS */
 .daygrid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:12px}
@@ -290,40 +284,92 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
 
 <!-- ── SCAN ── -->
 <div class="view" id="view-scan">
-  <div class="scanbox">
-    <div class="scanicon">📄</div>
-    <div class="scantitle">Kassenbon scannen</div>
-    <div class="scansub">Fotografiere deinen Bon – die App erkennt alle Produkte automatisch</div>
+  <!-- Scanner aktiv -->
+  <div id="scannerActive" style="display:none">
+    <div style="position:relative;border-radius:16px;overflow:hidden;margin-bottom:12px;background:#000">
+      <video id="barcodeVideo" playsinline autoplay muted style="width:100%;display:block;max-height:300px;object-fit:cover"></video>
+      <!-- Fadenkreuz -->
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+        <div style="width:200px;height:120px;border:3px solid rgba(107,191,135,0.9);border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,0.35)"></div>
+      </div>
+      <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:12px;text-align:center;color:#fff;font-size:12px;font-weight:600">Barcode im Rahmen platzieren</div>
+    </div>
+    <button class="btn btn-g btn-w" id="stopScanBtn">✕ Abbrechen</button>
   </div>
-  <div class="card" id="scanCard">
-    <canvas id="capturedCanvas"></canvas>
-    <video id="cameraPreview" playsinline autoplay muted></video>
-    <div id="scanBtns" style="display:flex;flex-direction:column;gap:9px">
-      <button class="btn btn-p btn-w" id="camBtn">📷 Kamera öffnen</button>
-      <button class="btn btn-g btn-w" id="fileBtn">📁 Bild aus Galerie</button>
-      <input type="file" id="fileInp" accept="image/*" style="display:none">
+
+  <!-- Start-Screen -->
+  <div id="scannerStart">
+    <div class="scanbox" style="background:linear-gradient(135deg,var(--green) 0%,var(--green-mid) 100%)">
+      <div class="scanicon">🔍</div>
+      <div class="scantitle">Barcode scannen</div>
+      <div class="scansub">Scanne den Barcode eines Produkts – wir suchen es automatisch in der Lebensmitteldatenbank</div>
     </div>
-    <div id="camCtrl" style="display:none;margin-top:10px">
-      <button class="btn btn-a btn-w" id="snapBtn">📸 Foto aufnehmen</button>
-      <button class="btn btn-g btn-w" style="margin-top:8px" id="camCancelBtn">Abbrechen</button>
-    </div>
-    <div id="ocrProg" style="display:none;margin-top:14px">
-      <div style="text-align:center;color:var(--muted);font-size:13px;font-weight:700;margin-bottom:7px" id="ocrTxt">🔍 Analysiere…</div>
-      <div class="progbar"><div class="progfill" id="ocrFill" style="width:0%"></div></div>
-    </div>
-  </div>
-  <div id="ocrResults" style="display:none">
-    <div class="card">
-      <div class="sec-title">✅ Erkannte Produkte</div>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:11px">Wähle aus, was du hinzufügen möchtest. Namen kannst du direkt bearbeiten.</p>
-      <label class="flabel">Laden</label>
-      <select class="inp" id="ocrStore"></select>
-      <div id="ocrList"></div>
-      <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="btn btn-g" style="flex:1" id="ocrCancel">Abbrechen</button>
-        <button class="btn btn-p" style="flex:1" id="ocrAdd">Hinzufügen</button>
+    <div style="display:flex;flex-direction:column;gap:9px;margin-top:4px">
+      <button class="btn btn-p btn-w" id="startScanBtn">📷 Scanner starten</button>
+      <div style="display:flex;align-items:center;gap:10px;margin:4px 0">
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="font-size:12px;color:var(--muted);font-weight:600">oder</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input type="text" class="inp" id="manualBarcode" placeholder="Barcode manuell eingeben…" style="margin:0;flex:1" inputmode="numeric">
+        <button class="btn btn-g" style="flex-shrink:0;padding:12px 16px" id="manualLookupBtn">🔎</button>
       </div>
     </div>
+  </div>
+
+  <!-- Ladeindikator -->
+  <div id="scannerLoading" style="display:none;text-align:center;padding:32px;color:var(--muted)">
+    <div style="font-size:40px;margin-bottom:12px;animation:spin 1s linear infinite">⏳</div>
+    <div style="font-weight:700;font-size:14px" id="loadingTxt">Suche Produkt…</div>
+  </div>
+
+  <!-- Produkt gefunden -->
+  <div id="scannerResult" style="display:none">
+    <div class="card" style="border-left:4px solid var(--green)">
+      <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:14px">
+        <div id="productImg" style="width:70px;height:70px;border-radius:10px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0;overflow:hidden"></div>
+        <div style="flex:1;min-width:0">
+          <div id="productName" style="font-family:var(--font-head);font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px"></div>
+          <div id="productBrand" style="font-size:12px;color:var(--muted);margin-bottom:6px"></div>
+          <div id="productMeta" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        </div>
+      </div>
+      <label class="flabel">Laden</label>
+      <select class="inp" id="resultStore"></select>
+      <label class="flabel">Kategorie</label>
+      <select class="inp" id="resultCat"></select>
+      <label class="flabel">Status</label>
+      <div style="display:flex;gap:7px;margin-bottom:14px">
+        <button class="btn btn-s" id="rsOk" style="flex:1;background:#DCF2E4;color:#1A5C2A;border:2px solid #6BBF87">✅ Vorhanden</button>
+        <button class="btn btn-s" id="rsLow" style="flex:1;background:var(--bg);border:2px solid transparent">⚠️ Wenig</button>
+        <button class="btn btn-s" id="rsEmpty" style="flex:1;background:var(--bg);border:2px solid transparent">🔴 Leer</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-g" style="flex:1" id="resultCancel">Abbrechen</button>
+        <button class="btn btn-p" style="flex:1" id="resultAdd">➕ Hinzufügen</button>
+      </div>
+    </div>
+    <button class="btn btn-g btn-w" style="margin-top:8px" id="scanAgainBtn">🔄 Weiteres Produkt scannen</button>
+  </div>
+
+  <!-- Nicht gefunden -->
+  <div id="scannerNotFound" style="display:none">
+    <div class="card" style="text-align:center;padding:24px">
+      <div style="font-size:42px;margin-bottom:10px">🤷</div>
+      <div style="font-weight:700;font-size:15px;margin-bottom:6px;color:var(--text)">Produkt nicht gefunden</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px" id="notFoundBarcode"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-g" style="flex:1" id="notFoundManual">✏️ Manuell eingeben</button>
+        <button class="btn btn-p" style="flex:1" id="notFoundScan">🔄 Nochmal scannen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kürzlich gescannt -->
+  <div id="recentScans" style="margin-top:4px">
+    <div class="sec-title" style="font-size:14px;margin-bottom:8px">🕐 Zuletzt gescannt</div>
+    <div id="recentList"></div>
   </div>
 </div>
 
@@ -480,7 +526,7 @@ select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js"></script>
 <script>
 // ──────────────────────────────────────────────────
 // CONSTANTS & STATE
@@ -491,7 +537,7 @@ const DEFAULT_STORES = ['Billa','Lidl','Hofer','Spar','Rewe'];
 
 let state = { items: [], stores: [...DEFAULT_STORES], categories: ['Obst & Gemüse','Milchprodukte','Fleisch & Fisch','Backwaren','Tiefkühl','Getränke','Haushalt','Sonstiges'], lastUpdated: null };
 let cfg = { mode: null, scriptUrl: '', remDays: [3, 6], remTime: '09:00', notifOn: false, lastRemDate: '' };
-let filterStore = 'all', newStatus = 'available', ocrItems = [], shopFilter = 'both';
+let filterStore = 'all', newStatus = 'available', shopFilter = 'both';
 let camStream = null, pushDebounce = null, syncing = false, autoSyncInterval = null;
 
 function loadState() { try { const s = localStorage.getItem(SK); if (s) state = { ...state, ...JSON.parse(s) }; } catch(e){} }
@@ -816,13 +862,13 @@ function renderRemDays() {
 }
 
 function updSelects() {
-  ['aStore', 'ocrStore', 'eStore'].forEach(id => {
+  ['aStore', 'eStore', 'resultStore'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     const cur = el.value;
     el.innerHTML = state.stores.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
     if (state.stores.includes(cur)) el.value = cur;
   });
-  ['aCat', 'eCat'].forEach(id => {
+  ['aCat', 'eCat', 'resultCat'].forEach(id => {
     const el = document.getElementById(id); if (!el) return;
     const cur = el.value;
     el.innerHTML = '<option value="">— keine —</option>' + state.categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -899,247 +945,266 @@ function delConfirm(id, name) {
 // ──────────────────────────────────────────────────
 // CAMERA / OCR
 // ──────────────────────────────────────────────────
-async function openCam() {
-  try {
-    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 1280 } } });
-    const v = document.getElementById('cameraPreview'); v.srcObject = camStream; v.style.display = 'block';
-    document.getElementById('scanBtns').style.display = 'none';
-    document.getElementById('camCtrl').style.display = 'block';
-  } catch (e) { showToast('❌ Kamera nicht verfügbar'); document.getElementById('fileInp').click(); }
+// ──────────────────────────────────────────────────
+// BARCODE SCANNER
+// ──────────────────────────────────────────────────
+let barcodeScanner = null, barcodeResult = null, scanStatus = 'available';
+const RECENT_KEY = 'mv_recent_scans';
+
+function showScanState(state) {
+  ['scannerStart','scannerActive','scannerLoading','scannerResult','scannerNotFound'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = id === state ? 'block' : 'none';
+  });
+  // Keep recent scans visible unless scanner is active
+  const recent = document.getElementById('recentScans');
+  if (recent) recent.style.display = state === 'scannerActive' ? 'none' : 'block';
 }
 
-function snap() {
-  const v = document.getElementById('cameraPreview'), c = document.getElementById('capturedCanvas');
-  c.width = v.videoWidth; c.height = v.videoHeight;
-  c.getContext('2d').drawImage(v, 0, 0); c.style.display = 'block';
-  v.style.display = 'none'; stopCam();
-  document.getElementById('camCtrl').style.display = 'none';
-  preprocessCanvas(c);
-  runOcr(c);
-}
+async function startBarcodeScanner() {
+  showScanState('scannerActive');
+  const video = document.getElementById('barcodeVideo');
 
-function stopCam() { if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; } }
+  // Try native BarcodeDetector first (fast, no library needed on modern Android Chrome)
+  if ('BarcodeDetector' in window) {
+    try {
+      const detector = new BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code'] });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      video.srcObject = stream;
+      barcodeScanner = { stream, native: true };
 
-function cancelCam() {
-  stopCam();
-  document.getElementById('cameraPreview').style.display = 'none';
-  document.getElementById('camCtrl').style.display = 'none';
-  document.getElementById('scanBtns').style.display = 'flex';
-}
-
-async function fileToCanvas(file) {
-  const c = document.getElementById('capturedCanvas'), img = new Image(), url = URL.createObjectURL(file);
-  await new Promise(res => { img.onload = () => { c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); URL.revokeObjectURL(url); res(); }; img.src = url; });
-  c.style.display = 'block';
-  preprocessCanvas(c);
-  runOcr(c);
-}
-
-// ── Bildvorverarbeitung für bessere OCR-Ergebnisse ──
-// Kassenbon-Bons sind oft verblasst, schief fotografiert und klein gedruckt.
-// Diese Funktion macht das Bild schärfer, erhöht den Kontrast und konvertiert
-// in Schwarz-Weiß – das erhöht die Tesseract-Erkennungsrate deutlich.
-function preprocessCanvas(canvas) {
-  // Nur skalieren – keine Farbmanipulation die invertieren könnte
-  const ctx = canvas.getContext('2d');
-  const maxSize = 1800;
-  if (canvas.width > maxSize || canvas.height > maxSize) {
-    const scale = Math.min(maxSize / canvas.width, maxSize / canvas.height);
-    const tmp = document.createElement('canvas');
-    tmp.width = Math.round(canvas.width * scale);
-    tmp.height = Math.round(canvas.height * scale);
-    tmp.getContext('2d').drawImage(canvas, 0, 0, tmp.width, tmp.height);
-    canvas.width = tmp.width; canvas.height = tmp.height;
-    ctx.drawImage(tmp, 0, 0);
+      const scan = async () => {
+        if (!barcodeScanner || !barcodeScanner.native) return;
+        try {
+          const barcodes = await detector.detect(video);
+          if (barcodes.length > 0) {
+            stopBarcodeScanner();
+            lookupBarcode(barcodes[0].rawValue);
+            return;
+          }
+        } catch(e) {}
+        requestAnimationFrame(scan);
+      };
+      video.addEventListener('loadeddata', () => requestAnimationFrame(scan), { once: true });
+      return;
+    } catch(e) { console.log('Native BarcodeDetector failed, trying ZXing:', e.message); }
   }
-}
 
-async function runOcr(canvas) {
-  document.getElementById('ocrProg').style.display = 'block';
-  document.getElementById('ocrResults').style.display = 'none';
-  setOcrText('🔍 Starte Analyse…', 5);
+  // Fallback: ZXing library
   try {
-    const worker = await Tesseract.createWorker('deu', 1, {
-      logger: m => {
-        if (m.status === 'loading tesseract core') setOcrText('⚙️ Lade OCR-Engine…', 10);
-        if (m.status === 'initializing tesseract') setOcrText('⚙️ Initialisiere…', 20);
-        if (m.status === 'loading language traineddata') setOcrText('📖 Lade Sprachdaten…', 35);
-        if (m.status === 'recognizing text') {
-          const p = Math.round(40 + (m.progress || 0) * 55);
-          setOcrText(`🔍 Lese Text… ${p}%`, p);
-        }
+    const codeReader = new ZXingBrowser.BrowserMultiFormatReader();
+    barcodeScanner = { zxing: codeReader, native: false };
+    await codeReader.decodeFromVideoDevice(null, video, (result, err) => {
+      if (result) {
+        stopBarcodeScanner();
+        lookupBarcode(result.getText());
       }
     });
-
-    // PSM 6 = gleichmäßiger Textblock – gut für Kassenbons aller Arten
-    await worker.setParameters({
-      tessedit_pageseg_mode: '6',
-    });
-
-    const { data: { text } } = await worker.recognize(canvas);
-    await worker.terminate();
-    setOcrText('✅ Fertig!', 100);
-    setTimeout(() => { document.getElementById('ocrProg').style.display = 'none'; }, 400);
-    parseReceipt(text);
-  } catch (e) {
-    document.getElementById('ocrProg').style.display = 'none';
-    console.error('OCR Error:', e);
-    showToast('❌ OCR fehlgeschlagen – bitte manuell eingeben');
+  } catch(e) {
+    showScanState('scannerStart');
+    showToast('❌ Kamera nicht verfügbar');
   }
 }
 
-function setOcrText(txt, pct) {
-  document.getElementById('ocrTxt').textContent = txt;
-  document.getElementById('ocrFill').style.width = pct + '%';
-}
-
-function detectStore(text) {
-  const lower = text.toLowerCase();
-  const storeMap = [
-    ['aldi', 'Aldi'], ['rewe', 'Rewe'], ['lidl', 'Lidl'], ['penny', 'Penny'],
-    ['billa', 'Billa'], ['spar', 'Spar'], ['hofer', 'Hofer'], ['edeka', 'Edeka'],
-    ['netto', 'Netto'], ['kaufland', 'Kaufland'], ['real', 'Real'],
-    ['dm ', 'dm'], ['rossmann', 'Rossmann'], ['müller', 'Müller'],
-    ['tegut', 'tegut'], ['norma', 'Norma'], ['nahkauf', 'Nahkauf']
-  ];
-  for (const [key, name] of storeMap) {
-    if (lower.includes(key)) return name;
-  }
-  return null;
-}
-
-function parseReceipt(text) {
-  // Laden automatisch erkennen
-  const detectedStore = detectStore(text);
-  if (detectedStore && state.stores.includes(detectedStore)) {
-    document.getElementById('ocrStore').value = detectedStore;
-  }
-
-  // Erste 3 Zeilen überspringen (fast immer Kopfzeile: Firmenname, Adresse, PLZ)
-  const allLines = text.split('\n').map(l => l.trim()).filter(l => l.length > 1);
-  const startIdx = Math.min(3, allLines.length);
-
-  const skipPatterns = [
-    // Summen & Zahlungen
-    /^(summe|zwischensumme|gesamtbetrag|total|gesamt|zwischen|bargeld|bar$|rückgabe|rückgeld|wechselgeld|bezahlt|zahlung)/i,
-    // Bon-Metadaten
-    /^(mwst|ust|mehrwertsteuer|steuer|netto|brutto|inkl\.|exkl\.)/i,
-    // Kasseninfo
-    /^(kasse|bon|beleg|bon-nr|belegnr|kassier|bedien|filiale|markt|vielen dank|auf wiedersehen|danke|öffnungszeit)/i,
-    // Datum & Uhrzeit
-    /datum|uhrzeit|\d{2}\.\d{2}\.\d{4}|\d{2}:\d{2}\s*(uhr)?$/i,
-    // Technische Daten (TSE, Transaktions- etc.)
-    /tse|transaktion|signatur|prüfwert|seriennr|serial|zähler|counter/i,
-    // Adresszeilen: PLZ + Ort, Straße + Hausnummer
-    /^\d{5}\s+\w/,         // PLZ Ort
-    /str(aße|\.)\s*\d/i,   // Straße 1
-    /straße|gasse|weg|allee|platz/i,
-    /gmbh|ag|kg|ug|e\.k\.|einzel/i,  // Firmenformen
-    // Nur Zahlen/Sonderzeichen
-    /^[^a-zA-ZäöüÄÖÜß]*$/,
-    // Artikelnummern-only Zeilen
-    /^\d{5,}$/,
-    // Normalpreis / Rabatt
-    /normalpreis|rabatt|ersparnis|aktion/i,
-    // Pfand
-    /pfand/i,
-  ];
-
-  const lines = allLines.slice(startIdx).filter(l => {
-    if (l.length < 3) return false;
-    if (!/[a-zA-ZäöüÄÖÜß]{3,}/.test(l)) return false;
-    if (skipPatterns.some(p => p.test(l))) return false;
-    const letterCount = (l.match(/[a-zA-ZäöüÄÖÜß]/g) || []).length;
-    if (letterCount < 3) return false;
-    return true;
-  });
-
-  const seen = new Set();
-  ocrItems = lines.map(l => {
-    let n = l
-      // Führende 1-2 Zeichen Müll: "| ", "A ", "MM "
-      .replace(/^[^a-zA-ZäöüÄÖÜß0-9]{1,3}\s*/, '')
-      // Artikelnummer am Anfang (ALDI/Lidl): "43468 Produkt"
-      .replace(/^\d{4,7}\s+/, '')
-      // Menge: "1x ", "2 x "
-      .replace(/^\d+\s*[xX]\s+/, '')
-      // Preis am Ende: "2,50 €", "1,99 A", "3,30 C"
-      .replace(/\s+\d+[,.]\d{2}\s*[€EUReurA-Ca-c]?\s*$/, '')
-      // "€" Zeichen und Preise wo auch immer
-      .replace(/\d+[,.]\d{2}\s*[€]?\s*/g, '')
-      .replace(/\d+[,.]\d+\s*(EUR|€)/gi, '')
-      // Gewichtsangaben
-      .replace(/\d+[,.]?\d*\s*(kg|g|l|ml|cl|stk\.?)/gi, '')
-      // Trailing Sonderzeichen
-      .replace(/[\|,.\-:;!?()[\]{}]+\s*$/, '')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-
-    if (n.length < 3 || !/[a-zA-ZäöüÄÖÜß]{3,}/.test(n)) return null;
-    const letters = (n.match(/[a-zA-ZäöüÄÖÜß]/g) || []).length;
-    if (letters < 3) return null;
-
-    // Normalisierung Großschreibung
-    const lettersOnly = n.replace(/[^a-zA-ZäöüÄÖÜß]/g, '');
-    if (lettersOnly === lettersOnly.toUpperCase() && lettersOnly.length > 2) {
-      n = n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
+function stopBarcodeScanner() {
+  if (!barcodeScanner) return;
+  try {
+    if (barcodeScanner.native && barcodeScanner.stream) {
+      barcodeScanner.stream.getTracks().forEach(t => t.stop());
     }
-    n = n.charAt(0).toUpperCase() + n.slice(1);
+    if (barcodeScanner.zxing) {
+      barcodeScanner.zxing.reset();
+    }
+  } catch(e) {}
+  barcodeScanner = null;
+  const video = document.getElementById('barcodeVideo');
+  if (video) video.srcObject = null;
+}
 
-    const key = n.toLowerCase().replace(/[^a-zäöüß]/g, '');
-    if (key.length < 3 || seen.has(key)) return null;
-    seen.add(key);
+async function lookupBarcode(barcode) {
+  showScanState('scannerLoading');
+  document.getElementById('loadingTxt').textContent = `Suche "${barcode}"…`;
 
-    return { id: uid(), name: n, sel: true };
-  }).filter(Boolean);
+  try {
+    // OpenFoodFacts API
+    const r = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+    const data = await r.json();
 
-  if (!ocrItems.length) {
-    showToast('⚠️ Keine Produkte erkannt');
-    document.getElementById('ocrResults').style.display = 'block';
-    document.getElementById('ocrList').innerHTML = `
-      <div style="text-align:center;padding:20px;color:var(--muted)">
-        <div style="font-size:36px;margin-bottom:8px">📷</div>
-        <p style="font-size:13px;line-height:1.5">Nichts erkannt.<br>Tipps: <strong>helles Licht</strong>, Bon <strong>gerade</strong> halten, <strong>nah genug</strong> ran.</p>
-      </div>`;
-    updSelects();
+    if (data.status === 1 && data.product) {
+      const p = data.product;
+      const name = p.product_name_de || p.product_name || p.generic_name || '';
+      const brand = p.brands || '';
+      const category = mapOffCategory(p.categories_tags || p.pnns_groups_1 || '');
+      const imgUrl = p.image_front_small_url || p.image_url || '';
+      const quantity = p.quantity || '';
+      const nutri = p.nutriscore_grade ? p.nutriscore_grade.toUpperCase() : '';
+
+      if (!name) { showNotFound(barcode); return; }
+
+      barcodeResult = { barcode, name: cleanProductName(name), brand, category, imgUrl, quantity };
+      showProductResult(barcodeResult, nutri);
+      saveRecentScan(barcodeResult);
+    } else {
+      showNotFound(barcode);
+    }
+  } catch(e) {
+    showScanState('scannerStart');
+    showToast('❌ Keine Internetverbindung');
+  }
+}
+
+function cleanProductName(name) {
+  // Remove brand repetitions and clean up
+  return name.replace(/\s{2,}/g, ' ').trim();
+}
+
+function mapOffCategory(cats) {
+  if (!cats) return '';
+  const s = Array.isArray(cats) ? cats.join(' ') : cats;
+  const lower = s.toLowerCase();
+  if (/dairy|milk|cheese|yogurt|milch|käse|joghurt|butter|sahne/.test(lower)) return 'Milchprodukte';
+  if (/meat|beef|pork|chicken|fish|seafood|fleisch|wurst|fisch/.test(lower)) return 'Fleisch & Fisch';
+  if (/bread|biscuit|pastry|cereal|brot|gebäck|mehl|getreide|müsli/.test(lower)) return 'Backwaren';
+  if (/fruit|vegetable|obst|gemüse/.test(lower)) return 'Obst & Gemüse';
+  if (/beverage|drink|juice|water|soda|getränk|saft|wasser/.test(lower)) return 'Getränke';
+  if (/frozen|tiefkühl/.test(lower)) return 'Tiefkühl';
+  if (/hygiene|cosmetic|cleaning|haushalt|reinigung|waschmittel/.test(lower)) return 'Haushalt';
+  return 'Sonstiges';
+}
+
+function showProductResult(product, nutri) {
+  showScanState('scannerResult');
+  document.getElementById('productName').textContent = product.name;
+  document.getElementById('productBrand').textContent = product.brand ? `🏭 ${product.brand}` : '';
+
+  // Product image or emoji fallback
+  const imgEl = document.getElementById('productImg');
+  if (product.imgUrl) {
+    imgEl.innerHTML = `<img src="${product.imgUrl}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.textContent='🛒'">`;
+  } else {
+    imgEl.textContent = emoji(product.name);
+  }
+
+  // Meta badges
+  const meta = document.getElementById('productMeta');
+  meta.innerHTML = '';
+  if (product.quantity) meta.innerHTML += `<span class="sbadge" style="background:var(--bg);color:var(--muted)">${esc(product.quantity)}</span>`;
+  if (nutri) {
+    const colors = {A:'#1A5C2A',B:'#3D7A57',C:'#B8860B',D:'#C4711A',E:'#C0392B'};
+    meta.innerHTML += `<span class="sbadge" style="background:${colors[nutri]||'#888'};color:#fff">Nutri-Score ${nutri}</span>`;
+  }
+  if (product.category) meta.innerHTML += `<span class="sbadge" style="background:var(--bg);color:var(--muted)">${esc(product.category)}</span>`;
+
+  updSelects();
+  if (product.category && state.categories.includes(product.category)) {
+    document.getElementById('resultCat').value = product.category;
+  }
+  scanStatus = 'available';
+  updScanStatusBtns();
+}
+
+function showNotFound(barcode) {
+  showScanState('scannerNotFound');
+  document.getElementById('notFoundBarcode').textContent = `Barcode: ${barcode}`;
+}
+
+function updScanStatusBtns() {
+  const bg = { available: '#DCF2E4', low: '#FEF3CC', empty: '#FDDCDC' };
+  const border = { available: '#6BBF87', low: '#ffc107', empty: '#dc3545' };
+  const color = { available: '#1A5C2A', low: '#6B4400', empty: '#7A1A1A' };
+  ['rsOk','rsLow','rsEmpty'].forEach(id => {
+    const s = {rsOk:'available',rsLow:'low',rsEmpty:'empty'}[id];
+    const b = document.getElementById(id); if (!b) return;
+    b.style.background = scanStatus === s ? bg[s] : 'var(--bg)';
+    b.style.border = scanStatus === s ? `2px solid ${border[s]}` : '2px solid transparent';
+    b.style.color = scanStatus === s ? color[s] : 'var(--text)';
+  });
+}
+
+function addScannedProduct() {
+  if (!barcodeResult) return;
+  const store = document.getElementById('resultStore').value;
+  const cat = document.getElementById('resultCat').value;
+  addItem(barcodeResult.name, store, 1, 'Stück', scanStatus, cat);
+  barcodeResult = null;
+  showScanState('scannerStart');
+  renderRecentScans();
+}
+
+function saveRecentScan(product) {
+  try {
+    let recent = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+    recent = recent.filter(r => r.barcode !== product.barcode);
+    recent.unshift({ ...product, scannedAt: new Date().toISOString() });
+    recent = recent.slice(0, 8); // max 8
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
+  } catch(e) {}
+}
+
+function renderRecentScans() {
+  const box = document.getElementById('recentList'); if (!box) return;
+  let recent = [];
+  try { recent = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch(e) {}
+  if (!recent.length) {
+    box.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px 0">Noch nichts gescannt</div>`;
     return;
   }
-
-  renderOcrItems();
-  document.getElementById('ocrResults').style.display = 'block';
-  updSelects();
-  showToast(`🔍 ${ocrItems.length} Produkte erkannt – bitte prüfen`);
-}
-
-
-function renderOcrItems() {
-  const box = document.getElementById('ocrList'); box.innerHTML = '';
-  ocrItems.forEach((item, i) => {
-    const r = document.createElement('div'); r.className = 'ocrrow';
-    r.innerHTML = `<div class="ocrtog ${item.sel ? 'sel' : ''}" data-i="${i}">${item.sel ? '✓' : ''}</div>
-      <div class="ocrname"><input type="text" value="${esc(item.name)}" data-i="${i}"></div>`;
-    r.querySelector('.ocrtog').addEventListener('click', () => { ocrItems[i].sel = !ocrItems[i].sel; r.querySelector('.ocrtog').className = 'ocrtog' + (ocrItems[i].sel ? ' sel' : ''); r.querySelector('.ocrtog').textContent = ocrItems[i].sel ? '✓' : ''; });
-    r.querySelector('input').addEventListener('change', e => ocrItems[i].name = e.target.value);
-    box.appendChild(r);
+  box.innerHTML = '';
+  recent.slice(0, 5).forEach(p => {
+    const d = document.createElement('div');
+    d.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer';
+    d.innerHTML = `<div style="font-size:22px;width:36px;text-align:center">${emoji(p.name)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</div>
+        <div style="font-size:11px;color:var(--muted)">${p.brand ? esc(p.brand) + ' · ' : ''}${p.barcode}</div>
+      </div>
+      <button style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer">+</button>`;
+    d.querySelector('button').addEventListener('click', () => {
+      barcodeResult = p;
+      showProductResult(p, '');
+    });
+    box.appendChild(d);
   });
 }
 
-function doAddOcr() {
-  const store = document.getElementById('ocrStore').value;
-  let n = 0;
-  ocrItems.filter(i => i.sel && i.name.trim()).forEach(item => {
-    const dup = state.items.find(x => x.name.toLowerCase() === item.name.toLowerCase());
-    if (dup) { dup.status = 'available'; } else { state.items.push({ id: uid(), name: item.name.trim(), store, quantity: 1, unit: 'Stück', status: 'available', addedAt: new Date().toISOString(), _chk: false }); }
-    n++;
+// ─────── Scan tab events (called from setupEvents) ───────
+function setupScanEvents() {
+  const startBtn = document.getElementById('startScanBtn');
+  if (startBtn) startBtn.addEventListener('click', startBarcodeScanner);
+
+  const stopBtn = document.getElementById('stopScanBtn');
+  if (stopBtn) stopBtn.addEventListener('click', () => { stopBarcodeScanner(); showScanState('scannerStart'); });
+
+  const manualBtn = document.getElementById('manualLookupBtn');
+  if (manualBtn) manualBtn.addEventListener('click', () => {
+    const code = document.getElementById('manualBarcode').value.trim();
+    if (code) lookupBarcode(code);
+    else showToast('❌ Bitte Barcode eingeben');
   });
-  savState(); schedulePush(); renderAll();
-  document.getElementById('ocrResults').style.display = 'none';
-  document.getElementById('capturedCanvas').style.display = 'none';
-  document.getElementById('scanBtns').style.display = 'flex';
-  ocrItems = [];
-  showToast(`✅ ${n} Produkte hinzugefügt`);
-  showView('pantry'); setNav('pantry');
+  const manualInp = document.getElementById('manualBarcode');
+  if (manualInp) manualInp.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('manualLookupBtn').click(); });
+
+  const resultAdd = document.getElementById('resultAdd');
+  if (resultAdd) resultAdd.addEventListener('click', addScannedProduct);
+
+  const resultCancel = document.getElementById('resultCancel');
+  if (resultCancel) resultCancel.addEventListener('click', () => { barcodeResult = null; showScanState('scannerStart'); });
+
+  const scanAgain = document.getElementById('scanAgainBtn');
+  if (scanAgain) scanAgain.addEventListener('click', () => { barcodeResult = null; startBarcodeScanner(); });
+
+  const notFoundManual = document.getElementById('notFoundManual');
+  if (notFoundManual) notFoundManual.addEventListener('click', () => { showScanState('scannerStart'); openModal(); });
+
+  const notFoundScan = document.getElementById('notFoundScan');
+  if (notFoundScan) notFoundScan.addEventListener('click', startBarcodeScanner);
+
+  ['rsOk','rsLow','rsEmpty'].forEach(id => {
+    const b = document.getElementById(id); if (!b) return;
+    b.addEventListener('click', () => { scanStatus = {rsOk:'available',rsLow:'low',rsEmpty:'empty'}[id]; updScanStatusBtns(); });
+  });
 }
+
 
 // ──────────────────────────────────────────────────
 // REMINDERS / SERVICE WORKER
@@ -1247,7 +1312,7 @@ function setupEvents() {
     const v = b.dataset.v; showView(v); setNav(v);
     if (v === 'more') { renderRemDays(); renderStores(); renderCategories(); updNotifUI(); renderConnInfo(); }
     if (v === 'shopping') renderShop();
-    if (v === 'scan') { cancelCam(); document.getElementById('capturedCanvas').style.display = 'none'; document.getElementById('ocrResults').style.display = 'none'; document.getElementById('ocrProg').style.display = 'none'; document.getElementById('scanBtns').style.display = 'flex'; }
+    if (v === 'scan') { stopBarcodeScanner(); showScanState('scannerStart'); renderRecentScans(); }
   }));
 
   document.getElementById('hdrBtn').addEventListener('click', () => { showView('more'); setNav('more'); renderRemDays(); renderStores(); updNotifUI(); renderConnInfo(); });
@@ -1264,14 +1329,8 @@ function setupEvents() {
   ['saOk', 'saLow', 'saEmpty'].forEach(id => document.getElementById(id).addEventListener('click', () => { newStatus = { saOk: 'available', saLow: 'low', saEmpty: 'empty' }[id]; updStatusBtns(); }));
   document.getElementById('addModal').addEventListener('click', e => { if (e.target === document.getElementById('addModal')) closeModal(); });
 
-  // Scan
-  document.getElementById('camBtn').addEventListener('click', openCam);
-  document.getElementById('snapBtn').addEventListener('click', snap);
-  document.getElementById('camCancelBtn').addEventListener('click', cancelCam);
-  document.getElementById('fileBtn').addEventListener('click', () => document.getElementById('fileInp').click());
-  document.getElementById('fileInp').addEventListener('change', e => { if (e.target.files[0]) fileToCanvas(e.target.files[0]); });
-  document.getElementById('ocrAdd').addEventListener('click', doAddOcr);
-  document.getElementById('ocrCancel').addEventListener('click', () => { document.getElementById('ocrResults').style.display = 'none'; document.getElementById('capturedCanvas').style.display = 'none'; document.getElementById('scanBtns').style.display = 'flex'; ocrItems = []; });
+  // Scan – handled by setupScanEvents()
+  setupScanEvents();
 
   // Shopping
   document.getElementById('fAll').addEventListener('click', () => { shopFilter = 'both'; renderShop(); });
